@@ -1,0 +1,21 @@
+name: CI
+on: [push]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci           # ← pnpm install から置換
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quickhub-capture
+          path: |
+            dist/main.js
+            manifest.json
+            styles.css

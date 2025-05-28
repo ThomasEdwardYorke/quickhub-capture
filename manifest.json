@@ -1,7 +1,7 @@
 {
 	"id": "quickhub-capture",
 	"name": "QuickHub Capture",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"minAppVersion": "1.5.0",
 	"description": "iOS/iPadOS から GitHub 経由でVaultにクイックメモを取り込むプラグイン",
 	"author": "ThomasEdwardYorke",

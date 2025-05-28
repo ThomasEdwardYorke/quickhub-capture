@@ -5,7 +5,7 @@ const watch = process.argv.includes("--watch");
 
 const buildPlugin = () =>
   build({
-	entryPoints: ["main.ts"],
+	entryPoints: ["src/main.ts"],
 	bundle: true,
 	minify: !watch,
 	outfile: "dist/main.js",

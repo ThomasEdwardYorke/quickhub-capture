@@ -1,10 +1,11 @@
 {
 	"id": "quickhub-capture",
 	"name": "QuickHub Capture",
-	"version": "0.1.5",
-	"minAppVersion": "1.5.0",
-	"description": "iOS/iPadOS から GitHub 経由でVaultにクイックメモを取り込むプラグイン",
+	"version": "0.1.6",
+	"minAppVersion": "0.15.0",
+	"description": "Capture quick notes from iOS shortcuts to GitHub, then import to Obsidian with automatic cleanup",
 	"author": "ThomasEdwardYorke",
 	"authorUrl": "https://github.com/ThomasEdwardYorke",
+	"fundingUrl": "https://github.com/ThomasEdwardYorke/quickhub-capture",
 	"isDesktopOnly": false
 }

@@ -44,11 +44,21 @@ export class GitHubClient {
 
   async deleteFile(file: RemoteFile, message = "QuickHub imported"): Promise<void> {
     const url = `${this.base}/repos/${this.opt.repo}/contents/${file.path}`;
-    await requestUrl({
-      url,
-      method: "DELETE",
-      headers: this.headers(),
-      body: JSON.stringify({ message, sha: file.sha }),
-    });
+    try {
+      await requestUrl({
+        url,
+        method: "DELETE",
+        headers: this.headers(),
+        body: JSON.stringify({ message, sha: file.sha }),
+      });
+    } catch (error: any) {
+      // 404エラーの場合は既にファイルが削除されているので成功とみなす
+      if (error.status === 404) {
+        console.log(`QuickHub: ファイルは既に削除済み: ${file.name}`);
+        return;
+      }
+      // その他のエラーは再スロー
+      throw error;
+    }
   }
 }

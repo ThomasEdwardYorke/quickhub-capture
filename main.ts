@@ -1,134 +1,124 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+/* -------------------------------------------------------------------------
+ * main.ts – QuickHub Capture プラグイン本体
+ * -------------------------------------------------------------------------
+ *  ▸ GitHub の quick-inbox からメモを取得 → Vault に保存 → GitHub 側を削除
+ *  ▸ 自動同期タイマー・リボンアイコン・コマンド登録
+ *  ▸ 設定 UI は QCSettingTab（settings.ts）に委譲
+ * -----------------------------------------------------------------------*/
 
-// Remember to rename these classes and interfaces!
+import { Plugin, Notice, normalizePath } from "obsidian";
+import { GitHubClient } from "./src/github-client";
+import { QCSettings, DEFAULT_SETTINGS, QCSettingTab } from "./src/settings";
 
-interface MyPluginSettings {
-	mySetting: string;
-}
+/* =========================== Plugin クラス本体 =========================== */
+export default class QuickHubCapture extends Plugin {
+	public settings!: QCSettings;           // 設定オブジェクト
+	private timer: number | null = null;    // 自動同期タイマー id
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
+	/* --------------------------- プラグイン読み込み --------------------------- */
 	async onload() {
-		await this.loadSettings();
+		/* 1) 設定ロード（ファイルが無ければ既定値で初期化） */
+		this.settings = Object.assign(
+			{},                                   // 新規オブジェクト
+			DEFAULT_SETTINGS,                     // 既定値
+			await this.loadData(),                // 保存済み
+		);
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		/* 2) 設定タブを追加（this を直接渡す） */
+		this.addSettingTab(new QCSettingTab(this.app, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
+		/* 3) コマンド登録（⌘P → quickhub-sync） */
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
+			id:   "quickhub-sync",
+			name: "QuickHub: 手動同期",
+			callback: () => this.syncNow(),
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		/* 4) リボンアイコン */
+		this.addRibbonIcon("cloud-download", "QuickHub Sync", () => this.syncNow());
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+		/* 5) 自動同期タイマー */
+		if (this.settings.autoSync) this.startTimer();
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		new Notice("QuickHub Capture 読み込み完了");
 	}
 
+	/* ---------------------------- アンロード処理 ----------------------------- */
 	onunload() {
-
+		this.clearTimer();
 	}
 
+	/* -------------------------- 設定の保存ラッパ ---------------------------- */
+	/** QCSettingTab から呼ばれる */
+	async saveSettings(): Promise<void> {
+		await this.saveData(this.settings);
+		/* タイマー設定が変わった場合に反映させる */
+		this.clearTimer();
+		if (this.settings.autoSync) this.startTimer();
+	}
+
+	/* =========================== 同期メイン処理 ============================ */
+	private async syncNow(): Promise<void> {
+		const { token, repo, inboxDir, saveFolder } = this.settings;
+
+		/* チェック */
+		if (!token || !repo) {
+			new Notice("QuickHub: PAT と Repo を設定してください");
+			return;
+		}
+
+		/* GitHub クライアント */
+		const gh = new GitHubClient({ token, repo, inboxDir });
+
+		try {
+			/* 1) ファイル一覧取得 */
+			const files = await gh.listInbox();
+			if (files.length === 0) {
+				new Notice("QuickHub: 新規ファイルなし");
+				return;
+			}
+
+			/* 2) 1 件ずつ取り込み */
+			for (const f of files) {
+				const body = await gh.fetchFile(f);
+				const name = `${this.timestamp()}.md`;
+				const path = normalizePath(`${saveFolder}/${name}`);
+
+				/* Vault に保存（無ければ作成） */
+				await this.app.vault.adapter.write(path, body);
+
+				/* 3) GitHub 側を削除 */
+				await gh.deleteFile(f, `QuickHub: imported ${name}`);
+			}
+
+			new Notice(`QuickHub: ${files.length} 件取り込み完了`);
+		} catch (err) {
+			console.error(err);
+			new Notice("QuickHub: 同期失敗 (詳細はコンソール)");
+		}
+	}
+
+	/* ------------------------- タイムスタンプ生成 -------------------------- */
+	private timestamp(): string {
+		const d = new Date();
+		const pad = (n: number) => n.toString().padStart(2, "0");
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(
+			d.getHours(),
+		)}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+	}
+
+	/* --------------------------- タイマー制御 ----------------------------- */
+	private startTimer() {
+		const ms = this.settings.interval * 60_000;
+		this.timer = window.setInterval(() => this.syncNow(), ms);
+	}
+	private clearTimer() {
+		if (this.timer !== null) window.clearInterval(this.timer);
+		this.timer = null;
+	}
+
+	/* -------------------------- 設定の読み込み ---------------------------- */
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
 	}
 }

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "create-note-with-date",
+    "name": "Create Note with Date in This Directory",
+    "author": "Sangrak Choi",
+    "description": "Create a new note with today's date in the current directory",
+    "repo": "kargnas/obsidian-create-note-with-date"
+  },
+  {
+    "id": "quickhub-capture",
+    "name": "QuickHub Capture",
+    "author": "ThomasEdwardYorke",
+    "description": "Capture quick notes from iOS shortcuts to GitHub, then import to Obsidian with automatic cleanup",
+    "repo": "ThomasEdwardYorke/quickhub-capture"
+  }
+]

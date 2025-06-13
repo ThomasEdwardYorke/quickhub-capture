@@ -14,6 +14,7 @@ import { QCSettings, DEFAULT_SETTINGS, QCSettingTab } from "./settings";
 export default class QuickHubCapture extends Plugin {
   public settings!: QCSettings;           // 設定オブジェクト
   private timer: number | null = null;    // 自動同期タイマー id
+  private isSyncing = false;              // 同期実行中フラグ
 
   /* --------------------------- プラグイン読み込み --------------------------- */
   async onload() {
@@ -68,6 +69,11 @@ export default class QuickHubCapture extends Plugin {
 
   /* =========================== 同期メイン処理 ============================ */
   private async syncNow(): Promise<void> {
+    if (this.isSyncing) {
+      console.log("QuickHub: 既に同期中のためスキップ");
+      return;
+    }
+
     console.log("QuickHub: 同期開始");
     const { token, repo, inboxDir, saveFolder } = this.settings;
 
@@ -82,6 +88,9 @@ export default class QuickHubCapture extends Plugin {
 
     /* GitHub クライアント */
     const gh = new GitHubClient({ token, repo, inboxDir });
+
+    // ここまで来れば同期を開始する準備が整ったのでフラグを立てる
+    this.isSyncing = true;
 
     try {
       /* 1) ファイル一覧取得 */
@@ -126,6 +135,8 @@ export default class QuickHubCapture extends Plugin {
     } catch (err) {
       console.error("QuickHub: 同期エラー:", err);
       new Notice("QuickHub: 同期失敗 (詳細はコンソール)");
+    } finally {
+      this.isSyncing = false;
     }
   }
 
